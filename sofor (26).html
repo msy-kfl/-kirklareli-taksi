@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Şoför - Konum Paylaşımı</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    background: #f4f4f2;
+    color: #222;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+  }
+  .card {
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #ddd;
+    padding: 24px;
+    max-width: 380px;
+    width: 100%;
+    text-align: center;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; font-weight: 500; }
+  .sub { font-size: 13px; color: #888; margin: 0 0 16px; }
+
+  .diag {
+    text-align: left;
+    background: #fafafa;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    font-size: 12px;
+  }
+  .diag-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+  }
+  .diag-row .label { color: #666; }
+  .diag-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+  .diag-badge.pending { background: #eee; color: #888; }
+  .diag-badge.ok { background: #e2f2e8; color: #2e8b57; }
+  .diag-badge.fail { background: #fbeaea; color: #a32d2d; }
+
+  button {
+    width: 100%;
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 500;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    margin-bottom: 10px;
+  }
+  #test-btn { background: #eee; color: #333; }
+  #test-btn:hover { background: #ddd; }
+  #start-btn { background: #1a1a1a; color: #fff; }
+  #start-btn:hover { background: #333; }
+  #start-btn:disabled { background: #aaa; cursor: not-allowed; }
+
+  .status-toggle { display: none; margin-top: 16px; }
+  .status-toggle.visible { display: block; }
+  #toggle-btn.available { background: #2e8b57; color: #fff; }
+  #toggle-btn.busy { background: #c0392b; color: #fff; }
+
+  .info-box {
+    margin-top: 16px;
+    padding: 12px;
+    border-radius: 8px;
+    background: #f7f7f5;
+    font-size: 13px;
+    color: #555;
+    text-align: left;
+    display: none;
+  }
+  .info-box.visible { display: block; }
+  .info-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .info-row span:first-child { color: #999; }
+
+  .error-box {
+    margin-top: 12px;
+    padding: 10px;
+    border-radius: 8px;
+    background: #fbeaea;
+    color: #a32d2d;
+    font-size: 13px;
+    display: none;
+    text-align: left;
+  }
+  .error-box.visible { display: block; }
+
+  .taxi-code {
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Şoför paneli</h1>
+  <p class="sub">Konumunu ve durumunu durak ekranına gönder</p>
+
+  <div class="diag">
+    <div class="diag-row"><span class="label">JavaScript</span><span class="diag-badge pending" id="diag-js">Bekliyor</span></div>
+    <div class="diag-row"><span class="label">Firebase bağlantısı</span><span class="diag-badge pending" id="diag-firebase">Bekliyor</span></div>
+    <div class="diag-row"><span class="label">Güvenli bağlantı (https)</span><span class="diag-badge pending" id="diag-https">Bekliyor</span></div>
+  </div>
+
+  <button id="test-btn" onclick="testConnection()">Bağlantıyı test et</button>
+
+  <p class="taxi-code">
+    Araç kodun: <strong id="taxi-code-display">-</strong><br>
+    <span style="font-size:12px;color:#999;">Gerekirse bu kodu durağa söyleyebilirsin.</span>
+  </p>
+
+  <div id="setup-section">
+    <button id="start-btn" onclick="startSharing()">Konum paylaşımını başlat</button>
+  </div>
+
+  <div class="error-box" id="error-box"></div>
+
+  <div class="status-toggle" id="status-toggle">
+    <button id="toggle-btn" class="available" onclick="toggleStatus()">Şu an: Müsait (değiştirmek için tıkla)</button>
+  </div>
+
+  <div class="info-box" id="info-box">
+    <div class="info-row"><span>Durum:</span><span id="info-status">-</span></div>
+    <div class="info-row"><span>Son konum:</span><span id="info-coords">-</span></div>
+    <div class="info-row"><span>Durağa iletim:</span><span id="info-sent">-</span></div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+  // ---- Teşhis: JS çalışıyor mu ----
+  function setDiag(id, state, text) {
+    const el = document.getElementById(id);
+    el.className = "diag-badge " + state;
+    el.textContent = text;
+  }
+  setDiag("diag-js", "ok", "Çalışıyor");
+  setDiag("diag-https", window.isSecureContext ? "ok" : "fail", window.isSecureContext ? "Evet" : "Hayır - sorun bu olabilir");
+
+  // ---- Firebase kurulumu ----
+  const firebaseConfig = {
+    apiKey: "AIzaSyAfo5FWQrOesff3Pvz8u_80jVTixtGSmbc",
+    authDomain: "kirklareli-taksi-d03fc.firebaseapp.com",
+    databaseURL: "https://kirklareli-taksi-d03fc-default-rtdb.firebaseio.com",
+    projectId: "kirklareli-taksi-d03fc",
+    storageBucket: "kirklareli-taksi-d03fc.firebasestorage.app",
+    messagingSenderId: "24424415010",
+    appId: "1:24424415010:web:866b2ec325c582439f6f7b"
+  };
+
+  let db = null;
+  try {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+    db.ref(".info/connected").on("value", snap => {
+      if (snap.val() === true) {
+        setDiag("diag-firebase", "ok", "Bağlı");
+      } else {
+        setDiag("diag-firebase", "fail", "Bağlı değil");
+      }
+    });
+  } catch (e) {
+    setDiag("diag-firebase", "fail", "Kurulum hatası");
+    showErrorSafe("Firebase kurulum hatası: " + e.message);
+  }
+
+  function showErrorSafe(msg) {
+    const box = document.getElementById("error-box");
+    if (!box) return;
+    box.textContent = msg;
+    box.classList.add("visible");
+  }
+
+  // ---- Araç kodu (otomatik, localStorage'da saklanır) ----
+  let taxiId = localStorage.getItem("taxiId");
+  if (!taxiId) {
+    taxiId = "T" + Math.floor(1000 + Math.random() * 9000);
+    localStorage.setItem("taxiId", taxiId);
+  }
+  document.getElementById("taxi-code-display").textContent = taxiId;
+
+  let currentStatus = "available";
+  let watchId = null;
+  let stallTimer = null;
+
+  function showError(msg) {
+    const box = document.getElementById("error-box");
+    box.textContent = msg;
+    box.classList.add("visible");
+  }
+  function clearError() {
+    document.getElementById("error-box").classList.remove("visible");
+  }
+
+  // ---- Bağlantı testi (GPS'siz, sadece Firebase yazma/okuma testi) ----
+  function testConnection() {
+    clearError();
+    const btn = document.getElementById("test-btn");
+    btn.textContent = "Test ediliyor...";
+    btn.disabled = true;
+
+    if (!db) {
+      showError("Firebase hiç başlamamış, sayfayı yenile.");
+      btn.textContent = "Bağlantıyı test et";
+      btn.disabled = false;
+      return;
+    }
+
+    const testRef = db.ref("connectionTest/" + taxiId);
+    testRef.set({ ping: Date.now() })
+      .then(() => testRef.once("value"))
+      .then(snapshot => {
+        if (snapshot.exists()) {
+          btn.textContent = "Bağlantı testi başarılı ✓";
+          setDiag("diag-firebase", "ok", "Yazma/okuma OK");
+        } else {
+          btn.textContent = "Bağlantıyı test et";
+          showError("Yazıldı ama geri okunamadı, tuhaf bir durum. Firebase kurallarını kontrol et.");
+        }
+        btn.disabled = false;
+      })
+      .catch(err => {
+        btn.textContent = "Bağlantıyı test et";
+        btn.disabled = false;
+        showError("Firebase testi BAŞARISIZ: " + err.code + " - " + err.message + ". Muhtemelen Realtime Database kuralları (Rules) yazmaya izin vermiyor.");
+        setDiag("diag-firebase", "fail", err.code || "Hata");
+      });
+  }
+
+  // ---- Konum paylaşımı ----
+  function startSharing() {
+    clearError();
+
+    if (!window.isSecureContext) {
+      showError("Bu sayfa https:// üzerinden açılmamış, bu yüzden konum çalışmaz.");
+      return;
+    }
+    if (!navigator.geolocation) {
+      showError("Bu tarayıcı konum paylaşımını desteklemiyor.");
+      return;
+    }
+    if (!db) {
+      showError("Firebase bağlantısı kurulamadı, sayfayı yenile.");
+      return;
+    }
+
+    document.getElementById("start-btn").disabled = true;
+    document.getElementById("start-btn").textContent = "Konum alınıyor...";
+
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: "geolocation" }).then(result => {
+        if (result.state === "denied") {
+          showError("Konum izni engellenmiş. iPhone: Ayarlar > Gizlilik ve Güvenlik > Konum Servisleri > Safari Websites > \"Ask Next Time Or When I Share\" seç, Safari'yi kapatıp aç.");
+          resetStartButton();
+        }
+      }).catch(() => {});
+    }
+
+    stallTimer = setTimeout(() => {
+      showError("15 saniyedir konum yanıtı yok. Telefonun GPS'i açık mı ve tarayıcıya konum izni verilmiş mi kontrol et.");
+      resetStartButton();
+    }, 15000);
+
+    watchId = navigator.geolocation.watchPosition(
+      onLocationUpdate,
+      onLocationError,
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+    );
+  }
+
+  function resetStartButton() {
+    document.getElementById("start-btn").disabled = false;
+    document.getElementById("start-btn").textContent = "Konum paylaşımını başlat";
+  }
+
+  function onLocationUpdate(position) {
+    clearError();
+    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
+
+    document.getElementById("setup-section").style.display = "none";
+    document.getElementById("status-toggle").classList.add("visible");
+    document.getElementById("info-box").classList.add("visible");
+    document.getElementById("info-status").textContent =
+      currentStatus === "available" ? "Müsait" : "Dolu";
+    document.getElementById("info-coords").textContent =
+      lat.toFixed(5) + ", " + lng.toFixed(5);
+    document.getElementById("info-sent").textContent = "gönderiliyor...";
+
+    db.ref("taxis/" + taxiId).set({
+      name: taxiId,
+      lat: lat,
+      lng: lng,
+      status: currentStatus,
+      updatedAt: Date.now()
+    }).then(() => {
+      document.getElementById("info-sent").textContent =
+        "✓ iletildi (" + new Date().toLocaleTimeString("tr-TR") + ")";
+    }).catch(err => {
+      document.getElementById("info-sent").textContent = "✗ başarısız";
+      showError("Konum durağa gönderilemedi: " + err.code + " - " + err.message + ". Firebase Realtime Database kurallarını (Rules) kontrol et.");
+    });
+  }
+
+  function onLocationError(err) {
+    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+    resetStartButton();
+
+    if (err.code === 1) {
+      showError("Konum izni reddedildi. iPhone: Ayarlar > Gizlilik ve Güvenlik > Konum Servisleri > Safari Websites > \"Ask Next Time Or When I Share\" seç.");
+    } else if (err.code === 2) {
+      showError("Konum alınamadı. GPS açık mı kontrol et.");
+    } else {
+      showError("Konum alınırken zaman aşımı oldu. Tekrar dene.");
+    }
+  }
+
+  function toggleStatus() {
+    currentStatus = currentStatus === "available" ? "busy" : "available";
+    const btn = document.getElementById("toggle-btn");
+    btn.className = currentStatus;
+    btn.textContent = currentStatus === "available"
+      ? "Şu an: Müsait (değiştirmek için tıkla)"
+      : "Şu an: Dolu (değiştirmek için tıkla)";
+    document.getElementById("info-status").textContent =
+      currentStatus === "available" ? "Müsait" : "Dolu";
+
+    if (db) {
+      db.ref("taxis/" + taxiId + "/status").set(currentStatus);
+      db.ref("taxis/" + taxiId + "/updatedAt").set(Date.now());
+    }
+  }
+
+  window.addEventListener("beforeunload", () => {
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+  });
+</script>
+
+</body>
+</html>
