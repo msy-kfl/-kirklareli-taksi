@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Durak - Canlı Takip</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    background: #f4f4f2;
+    color: #222;
+  }
+  header {
+    background: #1a1a1a;
+    color: #fff;
+    padding: 16px 20px;
+  }
+  header h1 { margin: 0; font-size: 18px; font-weight: 500; }
+  header p { margin: 4px 0 0; font-size: 13px; color: #bbb; }
+
+  .diag-bar {
+    display: flex;
+    gap: 16px;
+    padding: 8px 20px;
+    background: #f0f0ee;
+    border-bottom: 1px solid #ddd;
+    font-size: 12px;
+    flex-wrap: wrap;
+  }
+  .diag-item { display: flex; align-items: center; gap: 5px; }
+  .diag-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+  .diag-badge.pending { background: #eee; color: #888; }
+  .diag-badge.ok { background: #e2f2e8; color: #2e8b57; }
+  .diag-badge.fail { background: #fbeaea; color: #a32d2d; }
+
+  .layout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 16px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .map-panel {
+    flex: 2;
+    min-width: 320px;
+    background: #fff;
+    border-radius: 10px;
+    border: 1px solid #ddd;
+    padding: 12px;
+  }
+  .map-panel h2 { font-size: 15px; margin: 0 0 8px; font-weight: 500; }
+
+  #map { width: 100%; height: 400px; border-radius: 8px; }
+
+  .legend { display: flex; gap: 16px; font-size: 12px; color: #666; margin-top: 8px; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+  .list-panel {
+    flex: 1;
+    min-width: 260px;
+    background: #fff;
+    border-radius: 10px;
+    border: 1px solid #ddd;
+    padding: 12px;
+  }
+  .list-panel h2 { font-size: 15px; margin: 0 0 8px; font-weight: 500; }
+
+  .taxi-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #e5e5e5;
+    margin-bottom: 8px;
+  }
+  .taxi-name { font-size: 14px; font-weight: 500; }
+  .taxi-sub { font-size: 12px; color: #888; }
+
+  .status-badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    color: #fff;
+    font-weight: 500;
+  }
+  .status-badge.available { background: #2e8b57; }
+  .status-badge.busy { background: #c0392b; }
+  .status-badge.offline { background: #999; }
+
+  .empty-note { font-size: 13px; color: #999; padding: 8px 0; }
+
+  .queue-section { margin-top: 16px; padding-top: 12px; border-top: 1px solid #eee; }
+  .call-form { display: flex; gap: 6px; margin-bottom: 10px; }
+  .call-form input { flex: 1; padding: 7px 10px; font-size: 13px; border-radius: 6px; border: 1px solid #ccc; }
+  .call-form button { padding: 7px 12px; font-size: 13px; border-radius: 6px; border: none; background: #1a1a1a; color: #fff; cursor: pointer; }
+  .form-error { font-size: 12px; color: #c0392b; margin: -4px 0 8px; display: none; }
+  .queue-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; padding: 6px 0; border-bottom: 1px dashed #eee; }
+  .queue-item .addr { flex: 1; }
+  .queue-item .dist { font-size: 11px; color: #888; white-space: nowrap; }
+  .assign-btn { font-size: 11px; padding: 4px 8px; border-radius: 5px; border: 1px solid #2e8b57; background: #fff; color: #2e8b57; cursor: pointer; white-space: nowrap; }
+  .assign-btn:disabled { border-color: #ccc; color: #aaa; cursor: not-allowed; }
+
+  .raw-data {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #eee;
+  }
+  .raw-data h2 { font-size: 13px; color: #999; font-weight: 500; margin: 0 0 6px; }
+  .raw-data pre {
+    background: #fafafa;
+    border: 1px solid #eee;
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 11px;
+    max-height: 140px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .customer-marker-icon {
+    font-size: 20px;
+    text-align: center;
+    line-height: 20px;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Taksi Durağı - Canlı Takip</h1>
+  <p>Şoförlerin gerçek konumu ve müsaitlik durumu</p>
+</header>
+
+<div class="diag-bar">
+  <div class="diag-item">Firebase: <span class="diag-badge pending" id="diag-firebase">Bekliyor</span></div>
+  <div class="diag-item">Kayıtlı araç sayısı: <span class="diag-badge pending" id="diag-count">0</span></div>
+</div>
+
+<div class="layout">
+  <div class="map-panel">
+    <h2>Canlı harita</h2>
+    <div id="map"></div>
+    <div class="legend">
+      <span><i style="background:#2e8b57"></i> Müsait</span>
+      <span><i style="background:#c0392b"></i> Dolu</span>
+      <span><i style="background:#999"></i> Bağlantı yok (1 dk+)</span>
+      <span>📍 Müşteri konumu</span>
+    </div>
+    <p style="font-size:12px;color:#999;margin-top:6px;">İpucu: müşterinin konumunu işaretlemek için doğrudan haritaya tıkla.</p>
+  </div>
+
+  <div class="list-panel">
+    <h2>Araçlar</h2>
+    <div id="taxi-list"></div>
+    <div id="taxi-empty" class="empty-note">Henüz bağlı şoför yok. Şoförün sofor.html sayfasını açıp "Konum paylaşımını başlat" demesi gerekiyor.</div>
+
+    <div class="queue-section">
+      <h2>Bekleyen çağrılar</h2>
+      <div class="call-form">
+        <input type="text" id="address-input" placeholder="Müşteri adresi" onkeydown="if(event.key==='Enter') addCall()" />
+        <button onclick="addCall()">Çağrı ekle</button>
+      </div>
+      <div id="form-error" class="form-error">Lütfen bir adres girin.</div>
+      <div id="queue-list"></div>
+      <div id="queue-empty" class="empty-note">Şu an bekleyen çağrı yok.</div>
+    </div>
+
+    <div class="raw-data">
+      <h2>Ham veri (teşhis amaçlı)</h2>
+      <pre id="raw-json">-</pre>
+    </div>
+  </div>
+</div>
+
+<script>
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+  async function loadFirebaseSdk() {
+    const primary = [
+      "https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js",
+      "https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"
+    ];
+    const fallback = [
+      "https://cdn.jsdelivr.net/npm/firebase@10.12.2/firebase-app-compat.js",
+      "https://cdn.jsdelivr.net/npm/firebase@10.12.2/firebase-database-compat.js"
+    ];
+    try {
+      await loadScript(primary[0]);
+      await loadScript(primary[1]);
+    } catch (e) {
+      await loadScript(fallback[0]);
+      await loadScript(fallback[1]);
+    }
+    initApp();
+  }
+  loadFirebaseSdk().catch(e => {
+    setDiag("diag-firebase", "fail", "Yüklenemedi");
+  });
+</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  function setDiag(id, state, text) {
+    const el = document.getElementById(id);
+    el.className = "diag-badge " + state;
+    el.textContent = text;
+  }
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAfo5FWQrOesff3Pvz8u_80jVTixtGSmbc",
+    authDomain: "kirklareli-taksi-d03fc.firebaseapp.com",
+    databaseURL: "https://kirklareli-taksi-d03fc-default-rtdb.firebaseio.com",
+    projectId: "kirklareli-taksi-d03fc",
+    storageBucket: "kirklareli-taksi-d03fc.firebasestorage.app",
+    messagingSenderId: "24424415010",
+    appId: "1:24424415010:web:866b2ec325c582439f6f7b"
+  };
+
+  let db = null;
+
+  function initApp() {
+    try {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+      db.ref(".info/connected").on("value", snap => {
+        setDiag("diag-firebase", snap.val() === true ? "ok" : "fail", snap.val() === true ? "Bağlı" : "Bağlı değil");
+      });
+      db.ref("taxis").on("value", snapshot => {
+        taxis = snapshot.val() || {};
+        document.getElementById("raw-json").textContent = JSON.stringify(taxis, null, 2);
+        renderMarkers();
+        renderList();
+        renderQueue();
+      }, err => {
+        document.getElementById("raw-json").textContent = "Okuma hatası: " + err.message;
+      });
+    } catch (e) {
+      setDiag("diag-firebase", "fail", "Kurulum hatası");
+    }
+  }
+
+  const map = L.map("map").setView([41.7350, 27.2250], 13);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "© OpenStreetMap"
+  }).addTo(map);
+
+  const markers = {};
+  const callMarkers = {};
+  let taxis = {};
+  let queue = [];
+  let firstLoad = true;
+
+  function statusOf(taxi) {
+    const OFFLINE_MS = 60000;
+    if (Date.now() - taxi.updatedAt > OFFLINE_MS) return "offline";
+    return taxi.status === "busy" ? "busy" : "available";
+  }
+  function colorOf(status) {
+    if (status === "available") return "#2e8b57";
+    if (status === "busy") return "#c0392b";
+    return "#999";
+  }
+
+  map.on("click", (e) => {
+    const address = prompt("Müşteri adresi (kısa not, örn. 'Kapalı Çarşı yanı'):");
+    if (address && address.trim()) {
+      queue.push({
+        id: Date.now(),
+        address: address.trim(),
+        lat: e.latlng.lat,
+        lng: e.latlng.lng
+      });
+      renderQueue();
+      renderCallMarkers();
+    }
+  });
+
+  function renderCallMarkers() {
+    const customerIcon = L.divIcon({
+      html: "📍",
+      className: "customer-marker-icon",
+      iconSize: [24, 24],
+      iconAnchor: [12, 22]
+    });
+
+    queue.forEach(call => {
+      if (typeof call.lat !== "number" || typeof call.lng !== "number") return;
+      if (!callMarkers[call.id]) {
+        callMarkers[call.id] = L.marker([call.lat, call.lng], { icon: customerIcon }).addTo(map);
+        callMarkers[call.id].bindTooltip(call.address);
+      }
+    });
+
+    Object.keys(callMarkers).forEach(id => {
+      if (!queue.find(c => String(c.id) === String(id))) {
+        map.removeLayer(callMarkers[id]);
+        delete callMarkers[id];
+      }
+    });
+  }
+
+  function renderMarkers() {
+    const bounds = [];
+    Object.keys(taxis).forEach(id => {
+      const t = taxis[id];
+      if (typeof t.lat !== "number" || typeof t.lng !== "number") return;
+      const status = statusOf(t);
+      const color = colorOf(status);
+      bounds.push([t.lat, t.lng]);
+
+      if (!markers[id]) {
+        markers[id] = L.circleMarker([t.lat, t.lng], {
+          radius: 9, color: "#fff", weight: 2, fillColor: color, fillOpacity: 1
+        }).addTo(map);
+        markers[id].bindTooltip(t.name || id);
+      } else {
+        markers[id].setLatLng([t.lat, t.lng]);
+        markers[id].setStyle({ fillColor: color });
+      }
+    });
+
+    Object.keys(markers).forEach(id => {
+      if (!taxis[id]) {
+        map.removeLayer(markers[id]);
+        delete markers[id];
+      }
+    });
+
+    if (firstLoad && bounds.length > 0) {
+      map.fitBounds(bounds, { maxZoom: 15, padding: [40, 40] });
+      firstLoad = false;
+    }
+  }
+
+  function renderList() {
+    const list = document.getElementById("taxi-list");
+    const empty = document.getElementById("taxi-empty");
+    const ids = Object.keys(taxis);
+    document.getElementById("diag-count").textContent = ids.length;
+
+    if (ids.length === 0) {
+      list.innerHTML = "";
+      empty.style.display = "block";
+      return;
+    }
+    empty.style.display = "none";
+    list.innerHTML = "";
+
+    ids.forEach(id => {
+      const t = taxis[id];
+      const status = statusOf(t);
+      const card = document.createElement("div");
+      card.className = "taxi-card";
+      const label = status === "available" ? "Müsait" : status === "busy" ? "Dolu" : "Bağlantı yok";
+      card.innerHTML = `
+        <div>
+          <div class="taxi-name">${t.name || id}</div>
+          <div class="taxi-sub">Güncelleme: ${t.updatedAt ? new Date(t.updatedAt).toLocaleTimeString("tr-TR") : "-"}</div>
+        </div>
+        <span class="status-badge ${status}">${label}</span>
+      `;
+      list.appendChild(card);
+    });
+  }
+
+  setInterval(() => { renderMarkers(); renderList(); renderQueue(); }, 15000);
+
+  function distanceMeters(lat1, lng1, lat2, lng2) {
+    const R = 6371000;
+    const toRad = d => d * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function renderQueue() {
+    const q = document.getElementById("queue-list");
+    const empty = document.getElementById("queue-empty");
+    q.innerHTML = "";
+    if (queue.length === 0) { empty.style.display = "block"; return; }
+    empty.style.display = "none";
+
+    const availableIds = Object.keys(taxis).filter(id => statusOf(taxis[id]) === "available");
+
+    queue.forEach(call => {
+      const item = document.createElement("div");
+      item.className = "queue-item";
+      const addr = document.createElement("span");
+      addr.className = "addr";
+      addr.textContent = call.address;
+      item.appendChild(addr);
+
+      if (availableIds.length > 0 && typeof call.lat === "number") {
+        let minDist = Infinity;
+        availableIds.forEach(id => {
+          const d = distanceMeters(call.lat, call.lng, taxis[id].lat, taxis[id].lng);
+          if (d < minDist) minDist = d;
+        });
+        const distSpan = document.createElement("span");
+        distSpan.className = "dist";
+        distSpan.textContent = (minDist / 1000).toFixed(1) + " km";
+        item.appendChild(distSpan);
+      }
+
+      const btn = document.createElement("button");
+      btn.className = "assign-btn";
+      btn.textContent = "En yakını ata";
+      btn.disabled = availableIds.length === 0;
+      btn.onclick = () => assignCall(call.id);
+      item.appendChild(btn);
+
+      q.appendChild(item);
+    });
+  }
+
+  function addCall() {
+    const input = document.getElementById("address-input");
+    const error = document.getElementById("form-error");
+    const address = input.value.trim();
+    if (!address) { error.style.display = "block"; return; }
+    error.style.display = "none";
+    const center = map.getCenter();
+    queue.push({
+      id: Date.now(),
+      address,
+      lat: center.lat + (Math.random() - 0.5) * 0.01,
+      lng: center.lng + (Math.random() - 0.5) * 0.01
+    });
+    input.value = "";
+    renderQueue();
+    renderCallMarkers();
+  }
+
+  function assignCall(callId) {
+    const call = queue.find(c => c.id === callId);
+    if (!call) return;
+
+    const availableIds = Object.keys(taxis).filter(id => statusOf(taxis[id]) === "available");
+    if (availableIds.length === 0) return;
+
+    let nearestId = availableIds[0];
+    let minDist = distanceMeters(call.lat, call.lng, taxis[nearestId].lat, taxis[nearestId].lng);
+
+    availableIds.forEach(id => {
+      const d = distanceMeters(call.lat, call.lng, taxis[id].lat, taxis[id].lng);
+      if (d < minDist) { minDist = d; nearestId = id; }
+    });
+
+    db.ref("taxis/" + nearestId + "/status").set("busy");
+    db.ref("taxis/" + nearestId + "/updatedAt").set(Date.now());
+    queue = queue.filter(c => c.id !== callId);
+    renderQueue();
+    renderCallMarkers();
+  }
+</script>
+
+</body>
+</html>
